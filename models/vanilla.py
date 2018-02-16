@@ -19,5 +19,5 @@ class vanilla(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = nn.functional.upsample_bilinear(input=x, size=input_spatial_dim)
+        x = nn.functional.upsample(input=x, size=input_spatial_dim, 'bilinear')
         return x
