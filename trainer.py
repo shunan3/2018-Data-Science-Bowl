@@ -7,25 +7,19 @@ import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
-import torch.distributed as dist
 import torch.optim
 import torch.utils.data
-import torch.utils.data.distributed
 import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models as models
+
+import models
 
 parser = argparse.ArgumentParser(description='2018 Data Science Bowl Competition')
-parser.add_argument('data', metavar='DIR',
-                    help='path to dataset')
-parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18',
+parser.add_argument('--arch', '-a', metavar='ARCH', default='fcn32s_vanilla',
                     choices=model_names)
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
                     help='number of total epochs to run')
-parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
-                    help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=4, type=int,
                     metavar='N', help='mini-batch size (default: 4)')
 parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
@@ -34,51 +28,22 @@ parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
-parser.add_argument('--print-freq', '-p', default=10, type=int,
-                    metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--resume', default='', type=str, metavar='PATH',
-                    help='path to latest checkpoint (default: none)')
+parser.add_argument('--print-freq', '-p', default=1, type=int,
+                    metavar='N', help='print frequency (default: 1)')
+parser.add_argument('--resume', default='False', type=bool, metavar='N',
+                    help='resume from checkpoint (default: False)')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
-parser.add_argument('--pretrained', dest='pretrained', action='store_true',
-                    help='use pre-trained model')
-parser.add_argument('--world-size', default=1, type=int,
-                    help='number of distributed processes')
-parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
-                    help='url used to set up distributed training')
-parser.add_argument('--dist-backend', default='gloo', type=str,
-                    help='distributed backend')
 
 best_prec1 = 0
-
 
 def main():
     global args, best_prec1
     args = parser.parse_args()
 
-    args.distributed = args.world_size > 1
-
-    if args.distributed:
-        dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                world_size=args.world_size)
-
     # create model
-    if args.pretrained:
-        print("=> using pre-trained model '{}'".format(args.arch))
-        model = models.__dict__[args.arch](pretrained=True)
-    else:
-        print("=> creating model '{}'".format(args.arch))
-        model = models.__dict__[args.arch]()
-
-    if not args.distributed:
-        if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-            model.features = torch.nn.DataParallel(model.features)
-            model.cuda()
-        else:
-            model = torch.nn.DataParallel(model).cuda()
-    else:
-        model.cuda()
-        model = torch.nn.parallel.DistributedDataParallel(model)
+    model = models.__dict__[args.arch]()
+    model.cuda() 
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
@@ -88,52 +53,51 @@ def main():
                                 weight_decay=args.weight_decay)
 
     # optionally resume from a checkpoint
-    if args.resume:
-        if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume)
-            args.start_epoch = checkpoint['epoch']
-            best_prec1 = checkpoint['best_prec1']
-            model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
-        else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+    if args.resume = True:
+        checkpoint = torch.load(checkpoint)
+		start_epoch = checkpoint['epoch']
+        best_prec1 = checkpoint['best_prec1']
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        print("=> loaded checkpoint (epoch {})"
+                  .format(checkpoint['epoch']))
+    else:
+    	start_epoch = 0    	
 
     cudnn.benchmark = True
 
     # Data loading code
-    traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'val')
+    train_data = load_data('./data/stage1_train/', has_mask=True)
+    test_data = load_data('./data/stage1_test/', has_mask=False)
+    
+    
+    # Data processing    
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+                                 std=[0.229, 0.224, 0.225])
 
-    train_dataset = datasets.ImageFolder(
-        traindir,
-        transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ]))
+	s_trans = transforms.Compose([
+    transforms.Resize((256,256)),
+    transforms.ToTensor(),
+    normalize,
+    ])
+    
+	t_trans = transforms.Compose([
+    transforms.Resize((256,256)),
+    transforms.ToTensor(),
+    ])
 
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    else:
-        train_sampler = None
+	train_dataset =  image_processing(train_data,s_trans,t_trans)
+	
+	# Split dataset in train and validation sets
+ 	
+	
+    train_sampler = None
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler)
 
-    val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])),
+    val_loader = torch.utils.data.DataLoader(        ,
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
@@ -141,9 +105,7 @@ def main():
         validate(val_loader, model, criterion)
         return
 
-    for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
+    for epoch in range(start_epoch, args.epochs):        
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
@@ -303,6 +265,57 @@ def accuracy(output, target, topk=(1,)):
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
+def load_data(file_path, has_mask=True):
+    file_path = Path(file_path)
+    files = sorted(list(Path(file_path).iterdir()))
+    datas = []
 
+    for file in files:
+        item = {}
+        imgs = []
+        for image in (file/'images').iterdir():
+            img = io.imread(image)
+            imgs.append(img)
+        assert len(imgs)==1
+        if img.shape[2]>3:
+            assert(img[:,:,3]!=255).sum()==0
+        img = img[:,:,:3]
+
+        if has_mask:
+            mask_files = list((file/'masks').iterdir())
+            masks = None
+            for ii,mask in enumerate(mask_files):
+                mask = io.imread(mask)
+                assert (mask[(mask!=0)]==255).all()
+                if masks is None:
+                    H,W = mask.shape
+                    masks = np.zeros((len(mask_files),H,W))
+                masks[ii] = mask
+            tmp_mask = masks.sum(0)
+            assert (tmp_mask[tmp_mask!=0] == 255).all()
+            for ii,mask in enumerate(masks):
+                masks[ii] = mask/255 * (ii+1)
+            mask = masks.sum(0)
+            item['mask'] = t.from_numpy(mask)
+        item['name'] = str(file).split('/')[-1]
+        item['img'] = t.from_numpy(img)
+        datas.append(item)
+    return datas
+
+class image_processing():
+    def __init__(self,data,source_transform,target_transform):
+        self.datas = data
+        self.s_transform = source_transform
+        self.t_transform = target_transform
+    def __getitem__(self, index):
+        data = self.datas[index]
+        img = data['img'].numpy()
+        mask = data['mask'][:,:,None].byte().numpy()
+        img = self.s_transform(img)
+        mask = self.t_transform(mask)
+        return img, mask
+    def __len__(self):
+        return len(self.datas)
+       
 if __name__ == '__main__':
     main()`
