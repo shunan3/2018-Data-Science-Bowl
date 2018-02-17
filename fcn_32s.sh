@@ -3,8 +3,8 @@
 #SBATCH -n 1	  # tasks requested
 #SBATCH --gres=gpu:1
 #SBATCH --mem=160000  # memory in Mb
-#SBATCH -o fcn_32s_outfile  # send stdout to sample_experiment_outfile
-#SBATCH -e fcn_32s_errfile  # send stderr to sample_experiment_errfile
+#SBATCH -o outfile  # send stdout to sample_experiment_outfile
+#SBATCH -e errfile  # send stderr to sample_experiment_errfile
 #SBATCH -t 8:00:00  # time requested in hour:minute:secon
 export CUDA_HOME=/opt/cuda-8.0.44
 
@@ -30,4 +30,4 @@ export TMP=/disk/scratch/${STUDENT_ID}/
 
 source /home/${STUDENT_ID}/miniconda2/bin/activate mlp
 
-python fcn_32s.py
+python trainer.py --epochs 1

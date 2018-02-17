@@ -3,6 +3,12 @@ import os
 import shutil
 import time
 
+
+from pathlib import Path
+from PIL import Image
+from skimage import io
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -14,8 +20,12 @@ import torchvision.transforms as transforms
 import models
 from sklearn.model_selection import train_test_split
 
+model_names = sorted(name for name in models.__dict__
+    if  not name.startswith("__")
+    and callable(models.__dict__[name]))
+
 parser = argparse.ArgumentParser(description='2018 Data Science Bowl Competition')
-parser.add_argument('--arch', '-a', metavar='ARCH', default='fcn32s_vanilla',
+parser.add_argument('--arch', '-a', metavar='ARCH', default='vanilla',
                     choices=model_names)
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
@@ -31,7 +41,7 @@ parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
 parser.add_argument('--print-freq', '-p', default=1, type=int,
                     metavar='N', help='print frequency (default: 1)')
-parser.add_argument('--resume', default='False', type=bool, metavar='N',
+parser.add_argument('--resume', default=False, type=bool, metavar='N',
                     help='resume from checkpoint (default: False)')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
@@ -54,9 +64,9 @@ def main():
                                 weight_decay=args.weight_decay)
 
     # optionally resume from a checkpoint
-    if args.resume = True:
+    if args.resume == True:
         checkpoint = torch.load(checkpoint)
-		start_epoch = checkpoint['epoch']
+        start_epoch = checkpoint['epoch']
         best_prec = checkpoint['best_prec']
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -69,6 +79,7 @@ def main():
 
     # Data loading code
     train_data = load_data('./data/stage1_train/', has_mask=True)
+    valid_data = load_data('./data/stage1_valid/', has_mask=True)
     test_data = load_data('./data/stage1_test/', has_mask=False)
     
     
@@ -77,22 +88,20 @@ def main():
                                  std=[0.229, 0.224, 0.225])
 
     s_trans = transforms.Compose([
+    transforms.ToPILImage(),
     transforms.Resize((256,256)),
     transforms.ToTensor(),
     normalize,
     ])
     
     t_trans = transforms.Compose([
+    transforms.ToPILImage(),
     transforms.Resize((256,256)),
     transforms.ToTensor(),
     ])
-
-
-    data =  image_processing(train_data,s_trans,t_trans)
-	dataset =  image_processing(data,s_trans,t_trans)
-    # Split dataset in train and validation sets
-    train_dataset, val_dataset = train_test_split(dataset, test_size=0.2)   
-
+    
+    train_dataset = image_processing(train_data,s_trans,t_trans)
+    val_dataset = image_processing(valid_data,s_trans,t_trans)
 	
     train_sampler = None
 
@@ -298,7 +307,7 @@ def load_data(file_path, has_mask=True):
             for ii,mask in enumerate(masks):
                 masks[ii] = mask/255 * (ii+1)
             mask = masks.sum(0)
-            item['mask'] = t.from_numpy(mask)
+            item['mask'] = torch.from_numpy(mask)
         item['name'] = str(file).split('/')[-1]
         item['img'] = torch.from_numpy(img)
         datas.append(item)
@@ -315,10 +324,10 @@ class image_processing():
         mask = data['mask'][:,:,None].byte().numpy()
         img = self.s_transform(img)
         mask = self.t_transform(mask)
-	mask = mask > 0
+        mask = mask > 0
         return img, mask
     def __len__(self):
         return len(self.datas)
        
 if __name__ == '__main__':
-    main()`
+    main()
