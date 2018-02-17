@@ -294,6 +294,7 @@ class image_processing():
         mask = data['mask'][:,:,None].byte().numpy()
         img = self.s_transform(img)
         mask = self.t_transform(mask)
+	mask = mask > 0
         return img, mask
     def __len__(self):
         return len(self.datas)
